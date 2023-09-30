@@ -1,0 +1,103 @@
+name: post-commit
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+
+jobs:
+  build:
+    name: 'Build: ${{ matrix.config.name }} - ${{ matrix.build-type }}'
+    runs-on: ${{ matrix.config.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        config:
+          - name: Ubuntu - GCC
+            os: ubuntu-latest
+            cc: gcc-10
+            cxx: g++-10
+
+          - name: Ubuntu - Clang
+            os: ubuntu-latest
+            cc: clang-10
+            cxx: clang++-10
+
+          - name: Windows - MSVC
+            os: windows-latest
+            cc: cl
+            cxx: cl
+
+          - name: MacOS - Clang
+            os: macos-latest
+            cc: /usr/local/opt/llvm/bin/clang
+            cxx: /usr/local/opt/llvm/bin/clang++
+
+        build-type:
+          - Debug
+          - Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: >-
+          cmake
+          -B build
+          -D CMAKE_BUILD_TYPE=${{ matrix.build-type }}
+          -D CMAKE_C_COMPILER=${{ matrix.config.cc }}
+          -D CMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build-type }}
+
+      - name: Test
+        working-directory: build
+        run: ctest --build-config ${{ matrix.build-type }} --output-on-failure
+
+  test-coverage:
+    name: 'Test Coverage: Ubuntu - GCC'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install lcov
+        run: sudo apt-get install lcov
+
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: >-
+          cmake
+          -B build
+          -D CMAKE_BUILD_TYPE=Debug
+          -D CMAKE_C_COMPILER=gcc-10
+          -D CMAKE_CXX_COMPILER=g++-10
+          -D 'CMAKE_C_FLAGS=--coverage -fno-inline -fno-inline-small-functions -fno-default-inline'
+          -D 'CMAKE_CXX_FLAGS=--coverage -fno-inline -fno-inline-small-functions -fno-default-inline'
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Initialize Coverage Data
+        run: lcov --capture --initial --directory build --output-file build/base-coverage.info
+
+      - name: Test
+        working-directory: build
+        run: ctest --build-config Debug --output-on-failure
+
+      - name: Generate Coverage Info
+        run: |
+          lcov --capture --directory build --output-file build/coverage.info
+          lcov --add-tracefile build/base-coverage.info --add-tracefile build/coverage.info --output-file build/total-coverage.info
+          lcov --remove build/total-coverage.info '/usr/*' "$PWD"'/deps/*' --output-file build/total-coverage.info
+          lcov --list build/total-coverage.info
+          bash <(curl -s https://codecov.io/bash) -f build/total-coverage.info

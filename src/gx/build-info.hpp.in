@@ -1,0 +1,9 @@
+#pragma once
+
+#include <filesystem>
+
+namespace gx {
+
+inline const std::filesystem::path SOURCE_ROOT = "@CMAKE_SOURCE_DIR@";
+
+} // namespace bi
